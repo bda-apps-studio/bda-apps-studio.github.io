@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14161a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<title>BDA Inbox</title>
+<style>
+  :root { --bg:#14161a; --card:#1f2228; --fg:#f2f3f5; --mut:#8b919c; --ac:#4ade80; --err:#f87171; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:17px system-ui,sans-serif;
+         min-height:100dvh; padding:16px; display:flex; flex-direction:column; gap:14px; }
+  h1 { font-size:18px; margin:0; display:flex; justify-content:space-between; align-items:center; }
+  button { font:inherit; color:inherit; border:0; border-radius:14px; background:var(--card); padding:14px 18px; }
+  #gear { padding:6px 10px; background:none; color:var(--mut); font-size:22px; }
+  #apps { display:flex; flex-wrap:wrap; gap:10px; }
+  #apps button { flex:1 1 40%; min-height:56px; font-weight:600; }
+  #apps button.on { background:var(--ac); color:#06220f; }
+  textarea { width:100%; flex:1; min-height:160px; background:var(--card); color:var(--fg); border:0;
+             border-radius:14px; padding:14px; font:inherit; resize:none; }
+  .row { display:flex; gap:10px; }
+  #mic { width:84px; font-size:32px; }
+  #mic.rec { background:var(--err); animation:p 1s infinite; }
+  @keyframes p { 50% { opacity:.6; } }
+  #send { flex:1; background:var(--ac); color:#06220f; font-weight:700; font-size:19px; }
+  #send:disabled { opacity:.4; }
+  #msg { min-height:22px; color:var(--mut); text-align:center; }
+  #msg.err { color:var(--err); } #msg.ok { color:var(--ac); }
+  dialog { background:var(--card); color:var(--fg); border:0; border-radius:16px; width:min(92vw,420px); padding:18px; }
+  dialog::backdrop { background:#000a; }
+  label { display:block; margin:10px 0 4px; color:var(--mut); font-size:14px; }
+  input { width:100%; padding:12px; border-radius:10px; border:0; background:var(--bg); color:var(--fg); font:inherit; }
+  dialog .row { margin-top:16px; }
+</style>
+</head>
+<body>
+<h1>Inbox <button id="gear" aria-label="Instellingen">⚙</button></h1>
+<div id="apps"></div>
+<textarea id="text" placeholder="Spreek of typ je idee…"></textarea>
+<div class="row">
+  <button id="mic" aria-label="Inspreken">🎤</button>
+  <button id="send">Verstuur</button>
+</div>
+<div id="msg"></div>
+
+<dialog id="dlg">
+  <b>Instellingen</b>
+  <label for="repo">Inbox-repo (eigenaar/naam)</label>
+  <input id="repo" autocapitalize="none" autocomplete="off">
+  <label for="token">GitHub-token (alleen Issues: lezen en schrijven)</label>
+  <input id="token" type="password" autocapitalize="none" autocomplete="off">
+  <div class="row">
+    <button id="cancel">Sluiten</button>
+    <button id="save" style="background:var(--ac);color:#06220f;flex:1">Opslaan</button>
+  </div>
+</dialog>
+
+<script>
+const $ = id => document.getElementById(id);
+const DEFAULT_REPO = "bda-apps-studio/app-inbox";
+const get = (k, d = "") => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
+const set = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+
+let apps = [], sel = get("app");
+const say = (t, c = "") => { $("msg").textContent = t; $("msg").className = c; };
+
+fetch("apps.json").then(r => r.json()).then(a => { apps = a; set("apps", JSON.stringify(a)); draw(); })
+  .catch(() => { try { apps = JSON.parse(get("apps", "[]")); } catch {} draw(); });
+
+function draw() {
+  $("apps").innerHTML = "";
+  apps.forEach(a => {
+    const b = document.createElement("button");
+    b.textContent = a; b.className = a === sel ? "on" : "";
+    b.onclick = () => { sel = a; set("app", a); draw(); };
+    $("apps").append(b);
+  });
+}
+
+// Spraak
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, base = "";
+$("mic").onclick = () => {
+  if (!SR) return say("Spraakherkenning niet beschikbaar; gebruik de microfoon op je toetsenbord.", "err");
+  if (rec) { rec.stop(); return; }
+  rec = new SR(); rec.lang = "nl-NL"; rec.interimResults = true; rec.continuous = true;
+  base = $("text").value ? $("text").value.trimEnd() + " " : "";
+  rec.onresult = e => {
+    let t = ""; for (const r of e.results) t += r[0].transcript;
+    $("text").value = base + t;
+  };
+  rec.onend = () => { rec = null; $("mic").classList.remove("rec"); };
+  rec.onerror = e => say("Microfoonfout: " + e.error, "err");
+  $("mic").classList.add("rec"); rec.start();
+};
+
+// Versturen
+$("send").onclick = async () => {
+  if (rec) rec.stop();
+  const text = $("text").value.trim(), token = get("token"), repo = get("repo", DEFAULT_REPO);
+  if (!sel) return say("Kies eerst een app.", "err");
+  if (!text) return say("Er is nog niets ingevuld.", "err");
+  if (!token) { say("Vul eerst je token in.", "err"); return $("dlg").showModal(); }
+  $("send").disabled = true; say("Versturen…");
+  const title = `[${sel}] ` + (text.length > 70 ? text.slice(0, 67).replace(/\s+\S*$/, "") + "…" : text);
+  try {
+    const r = await fetch(`https://api.github.com/repos/${repo}/issues`, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+      body: JSON.stringify({ title, body: text, labels: ["app:" + sel.toLowerCase(), "inbox"] })
+    });
+    if (!r.ok) throw new Error(r.status + " " + ((await r.json().catch(() => ({}))).message || ""));
+    $("text").value = ""; say("✓ Opgeslagen", "ok"); navigator.vibrate?.(60);
+  } catch (e) {
+    set("pending", JSON.stringify({ sel, text }));
+    say("Mislukt: " + e.message + ". Je tekst blijft staan.", "err");
+  }
+  $("send").disabled = false;
+};
+
+// Instellingen
+$("gear").onclick = () => { $("repo").value = get("repo", DEFAULT_REPO); $("token").value = get("token"); $("dlg").showModal(); };
+$("cancel").onclick = () => $("dlg").close();
+$("save").onclick = () => { set("repo", $("repo").value.trim()); set("token", $("token").value.trim()); $("dlg").close(); say("Opgeslagen", "ok"); };
+
+// Query-parameters: ?token=..&repo=.. eenmalig instellen, daarna uit de URL halen
+const q = new URLSearchParams(location.hash.slice(1));
+if (q.get("token")) { set("token", q.get("token")); if (q.get("repo")) set("repo", q.get("repo")); history.replaceState(null, "", location.pathname); say("Token ingesteld ✓", "ok"); }
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>
