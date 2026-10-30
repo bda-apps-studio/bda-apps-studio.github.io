@@ -66,7 +66,7 @@ const set = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 let apps = [], sel = get("app");
 const say = (t, c = "") => { $("msg").textContent = t; $("msg").className = c; };
 
-fetch("apps.json").then(r => r.json()).then(a => { apps = a; set("apps", JSON.stringify(a)); draw(); })
+fetch("apps.json", { cache: "no-store" }).then(r => r.json()).then(a => { apps = a; set("apps", JSON.stringify(a)); draw(); })
   .catch(() => { try { apps = JSON.parse(get("apps", "[]")); } catch {} draw(); });
 
 function draw() {
@@ -95,7 +95,7 @@ $("mic").onclick = () => {
   rec.onerror = e => {
     rec = null; $("mic").classList.remove("rec");
     say(e.error === "not-allowed"
-      ? "Microfoon geblokkeerd: tik op het slotje bij het adres → Machtigingen → Microfoon → Toestaan. Of gebruik 🎤 op je toetsenbord."
+      ? "Microfoon geblokkeerd: open Chrome ⋮ → Instellingen → Site-instellingen → Microfoon, en zet bda-apps.com op Toestaan. Of gebruik 🎤 op je toetsenbord."
       : "Microfoonfout: " + e.error, "err");
   };
   $("mic").classList.add("rec"); rec.start();
