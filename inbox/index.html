@@ -92,7 +92,12 @@ $("mic").onclick = () => {
     $("text").value = base + t;
   };
   rec.onend = () => { rec = null; $("mic").classList.remove("rec"); };
-  rec.onerror = e => say("Microfoonfout: " + e.error, "err");
+  rec.onerror = e => {
+    rec = null; $("mic").classList.remove("rec");
+    say(e.error === "not-allowed"
+      ? "Microfoon geblokkeerd: tik op het slotje bij het adres → Machtigingen → Microfoon → Toestaan. Of gebruik 🎤 op je toetsenbord."
+      : "Microfoonfout: " + e.error, "err");
+  };
   $("mic").classList.add("rec"); rec.start();
 };
 
