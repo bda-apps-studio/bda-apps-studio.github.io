@@ -82,7 +82,11 @@ function draw() {
 // Spraak
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, base = "";
-$("mic").onclick = () => {
+$("mic").onclick = async () => {
+  if (!rec && navigator.mediaDevices?.getUserMedia) {
+    try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach(t => t.stop()); }
+    catch (e) { return say("Geen microfoontoegang (" + e.name + "). Tik nogmaals op 🎤 en kies Toestaan; verschijnt er niets, zet dan Chrome ⋮ → Instellingen → Site-instellingen → Microfoon → bda-apps.com op Toestaan.", "err"); }
+  }
   if (!SR) return say("Spraakherkenning niet beschikbaar; gebruik de microfoon op je toetsenbord.", "err");
   if (rec) { rec.stop(); return; }
   rec = new SR(); rec.lang = "nl-NL"; rec.interimResults = true; rec.continuous = true;
